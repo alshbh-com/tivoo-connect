@@ -19,12 +19,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
-    const savedUser = localStorage.getItem("tivoo_user");
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
+    // Check for existing session on mount
+    const initAuth = async () => {
+      const savedUser = localStorage.getItem("tivoo_user");
+      if (savedUser) {
+        try {
+          const userData = JSON.parse(savedUser);
+          // Verify user still exists in database
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", userData.id)
+            .single();
+          
+          if (data && !error) {
+            setUser(data);
+            // Update last_seen
+            await supabase
+              .from("profiles")
+              .update({ last_seen: new Date().toISOString() })
+              .eq("id", data.id);
+          } else {
+            // Clear invalid session
+            localStorage.removeItem("tivoo_user");
+            setUser(null);
+          }
+        } catch (error) {
+          console.error("Session restore error:", error);
+          localStorage.removeItem("tivoo_user");
+          setUser(null);
+        }
+      }
+      setLoading(false);
+    };
+    
+    initAuth();
   }, []);
 
   const login = async (username: string, password: string) => {
