@@ -158,7 +158,7 @@ export default function Chats() {
       {/* Floating action button */}
       <button
         className="fixed bottom-6 left-6 w-14 h-14 rounded-full bg-gradient-primary shadow-elevated hover:scale-110 transition-transform flex items-center justify-center"
-        onClick={() => navigate("/new-chat")}
+        onClick={() => navigate("/search")}
       >
         <Plus className="w-6 h-6 text-white" />
       </button>
