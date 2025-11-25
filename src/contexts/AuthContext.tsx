@@ -1,8 +1,8 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import type { Tables } from "@/integrations/supabase/types";
+import { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import type { Tables } from '@/integrations/supabase/types';
 
-type Profile = Tables<"profiles">;
+type Profile = Tables<'profiles'>;
 
 interface AuthContextType {
   user: Profile | null;
@@ -10,6 +10,7 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (username: string, password: string, displayName?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  updateOnlineStatus: (isOnline: boolean) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -17,49 +18,92 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const onlineIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const updateOnlineStatus = async (isOnline: boolean) => {
+    if (!user) return;
+    
+    try {
+      await supabase
+        .from('profiles')
+        .update({ 
+          is_online: isOnline,
+          last_seen: new Date().toISOString()
+        })
+        .eq('id', user.id);
+    } catch (error) {
+      console.error('Error updating online status:', error);
+    }
+  };
 
   useEffect(() => {
-    // Check for existing session on mount
-    const initAuth = async () => {
-      const savedUser = localStorage.getItem("tivoo_user");
-      if (savedUser) {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      const parsedUser = JSON.parse(storedUser);
+      void (async () => {
         try {
-          const userData = JSON.parse(savedUser);
-          // Verify user still exists in database
-          const { data, error } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", userData.id)
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', parsedUser.id)
             .single();
           
-          if (data && !error) {
+          if (data && !data.is_banned) {
             setUser(data);
-            // Update last_seen
-            await supabase
-              .from("profiles")
-              .update({ last_seen: new Date().toISOString() })
-              .eq("id", data.id);
+            void supabase
+              .from('profiles')
+              .update({ 
+                is_online: true,
+                last_seen: new Date().toISOString()
+              })
+              .eq('id', data.id);
           } else {
-            // Clear invalid session
-            localStorage.removeItem("tivoo_user");
-            setUser(null);
+            localStorage.removeItem('user');
           }
-        } catch (error) {
-          console.error("Session restore error:", error);
-          localStorage.removeItem("tivoo_user");
-          setUser(null);
+        } catch {
+          localStorage.removeItem('user');
         }
-      }
+        setLoading(false);
+      })();
+    } else {
       setLoading(false);
-    };
-    
-    initAuth();
+    }
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      updateOnlineStatus(true);
+      
+      onlineIntervalRef.current = setInterval(() => {
+        updateOnlineStatus(true);
+      }, 30000);
+
+      const handleBeforeUnload = () => {
+        if (user) {
+          const url = `https://ttvoviscvpcchptsnddn.supabase.co/rest/v1/profiles?id=eq.${user.id}`;
+          const data = JSON.stringify({ is_online: false, last_seen: new Date().toISOString() });
+          const blob = new Blob([data], { type: 'application/json' });
+          navigator.sendBeacon(url, blob);
+        }
+      };
+
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      window.addEventListener('pagehide', handleBeforeUnload);
+
+      return () => {
+        if (onlineIntervalRef.current) {
+          clearInterval(onlineIntervalRef.current);
+        }
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+        window.removeEventListener('pagehide', handleBeforeUnload);
+        updateOnlineStatus(false);
+      };
+    }
+  }, [user]);
 
   const login = async (username: string, password: string) => {
     try {
-      // Call edge function for login
-      const { data, error } = await supabase.functions.invoke("login", {
+      const { data, error } = await supabase.functions.invoke('login', {
         body: { username, password },
       });
 
@@ -67,21 +111,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (data.success && data.user) {
         setUser(data.user);
-        localStorage.setItem("tivoo_user", JSON.stringify(data.user));
+        localStorage.setItem('user', JSON.stringify(data.user));
         return { success: true };
-      } else {
-        return { success: false, error: data.error || "فشل تسجيل الدخول" };
       }
+
+      return { success: false, error: data.error || 'فشل تسجيل الدخول' };
     } catch (error: any) {
-      console.error("Login error:", error);
-      return { success: false, error: error.message || "حدث خطأ أثناء تسجيل الدخول" };
+      return { success: false, error: error.message || 'حدث خطأ أثناء تسجيل الدخول' };
     }
   };
 
   const register = async (username: string, password: string, displayName?: string) => {
     try {
-      // Call edge function for registration
-      const { data, error } = await supabase.functions.invoke("register", {
+      const { data, error } = await supabase.functions.invoke('register', {
         body: { username, password, displayName },
       });
 
@@ -89,24 +131,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (data.success && data.user) {
         setUser(data.user);
-        localStorage.setItem("tivoo_user", JSON.stringify(data.user));
+        localStorage.setItem('user', JSON.stringify(data.user));
         return { success: true };
-      } else {
-        return { success: false, error: data.error || "فشل إنشاء الحساب" };
       }
+
+      return { success: false, error: data.error || 'فشل إنشاء الحساب' };
     } catch (error: any) {
-      console.error("Registration error:", error);
-      return { success: false, error: error.message || "حدث خطأ أثناء إنشاء الحساب" };
+      return { success: false, error: error.message || 'حدث خطأ أثناء إنشاء الحساب' };
     }
   };
 
   const logout = () => {
+    if (user) {
+      void supabase
+        .from('profiles')
+        .update({ is_online: false, last_seen: new Date().toISOString() })
+        .eq('id', user.id);
+    }
     setUser(null);
-    localStorage.removeItem("tivoo_user");
+    localStorage.removeItem('user');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateOnlineStatus }}>
       {children}
     </AuthContext.Provider>
   );
@@ -115,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 }

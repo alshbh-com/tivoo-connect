@@ -5,7 +5,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Send, Loader2, Trash2 } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Trash2, MoreVertical } from "lucide-react";
+import { MessageReactions } from "@/components/MessageReactions";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -28,6 +35,7 @@ type ConversationDetails = {
   other_avatar_url: string | null;
   other_status: string | null;
   other_last_seen: string | null;
+  other_is_online: boolean;
 };
 
 export default function Chat() {
@@ -174,22 +182,31 @@ export default function Chat() {
     }
   };
 
-  const handleDeleteMessage = async () => {
+  const handleDeleteMessage = async (deleteForEveryone: boolean = false) => {
     if (!selectedMessageId) return;
 
     try {
-      const { error } = await supabase
-        .from("messages")
-        .update({ is_deleted: true })
-        .eq("id", selectedMessageId);
+      if (deleteForEveryone) {
+        const { error } = await supabase
+          .from("messages")
+          .update({ deleted_for_all: true })
+          .eq("id", selectedMessageId);
 
-      if (error) throw error;
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("messages")
+          .update({ deleted_for_sender: true })
+          .eq("id", selectedMessageId);
+
+        if (error) throw error;
+      }
 
       setMessages((prev) => prev.filter((msg) => msg.id !== selectedMessageId));
       
       toast({
         title: "تم حذف الرسالة",
-        description: "تم حذف الرسالة بنجاح",
+        description: deleteForEveryone ? "تم حذف الرسالة للجميع" : "تم حذف الرسالة لك فقط",
       });
     } catch (error: any) {
       console.error("Delete message error:", error);
@@ -211,6 +228,25 @@ export default function Chat() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const getOnlineStatus = () => {
+    if (!conversationDetails) return "";
+    if (conversationDetails.other_is_online) return "متصل الآن";
+    if (conversationDetails.other_last_seen) {
+      const lastSeen = new Date(conversationDetails.other_last_seen);
+      const now = new Date();
+      const diffMs = now.getTime() - lastSeen.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      
+      if (diffMins < 1) return "متصل الآن";
+      if (diffMins < 60) return `آخر ظهور منذ ${diffMins} دقيقة`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `آخر ظهور منذ ${diffHours} ساعة`;
+      const diffDays = Math.floor(diffHours / 24);
+      return `آخر ظهور منذ ${diffDays} يوم`;
+    }
+    return "غير متصل";
   };
 
   if (loading) {
@@ -250,7 +286,7 @@ export default function Chat() {
                     conversationDetails.other_username}
                 </h1>
                 <p className="text-xs text-muted-foreground">
-                  {conversationDetails.other_status || "غير متصل"}
+                  {getOnlineStatus()}
                 </p>
               </div>
             </>
@@ -284,19 +320,39 @@ export default function Chat() {
                     >
                       {formatTime(message.created_at)}
                     </p>
+                    <MessageReactions messageId={message.id} />
                   </div>
                   {isOwn && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="absolute -left-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive h-8 w-8"
-                      onClick={() => {
-                        setSelectedMessageId(message.id);
-                        setDeleteDialogOpen(true);
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute -left-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity h-8 w-8"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setSelectedMessageId(message.id);
+                            handleDeleteMessage(false);
+                          }}
+                        >
+                          حذف لي فقط
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setSelectedMessageId(message.id);
+                            handleDeleteMessage(true);
+                          }}
+                          className="text-destructive"
+                        >
+                          حذف للجميع
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </div>
               </div>
@@ -340,16 +396,22 @@ export default function Chat() {
           <AlertDialogHeader>
             <AlertDialogTitle>هل أنت متأكد؟</AlertDialogTitle>
             <AlertDialogDescription>
-              سيتم حذف الرسالة بشكل نهائي ولا يمكن التراجع عن هذا الإجراء.
+              اختر كيف تريد حذف الرسالة
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>إلغاء</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeleteMessage}
+              onClick={() => handleDeleteMessage(false)}
+              className="bg-muted hover:bg-muted/90 text-foreground"
+            >
+              حذف لي فقط
+            </AlertDialogAction>
+            <AlertDialogAction
+              onClick={() => handleDeleteMessage(true)}
               className="bg-destructive hover:bg-destructive/90"
             >
-              حذف
+              حذف للجميع
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
