@@ -5,8 +5,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Send, Loader2 } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Message = Tables<"messages">;
@@ -31,6 +41,8 @@ export default function Chat() {
   const [sending, setSending] = useState(false);
   const [conversationDetails, setConversationDetails] =
     useState<ConversationDetails | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,6 +53,7 @@ export default function Chat() {
 
     loadConversationDetails();
     loadMessages();
+    markAsRead();
     subscribeToMessages();
   }, [user, conversationId, navigate]);
 
@@ -67,6 +80,19 @@ export default function Chat() {
       }
     } catch (error: any) {
       console.error("Load conversation details error:", error);
+    }
+  };
+
+  const markAsRead = async () => {
+    if (!conversationId || !user) return;
+
+    try {
+      await supabase.rpc("mark_conversation_as_read", {
+        p_conversation_id: conversationId,
+        p_user_id: user.id,
+      });
+    } catch (error: any) {
+      console.error("Mark as read error:", error);
     }
   };
 
@@ -148,6 +174,36 @@ export default function Chat() {
     }
   };
 
+  const handleDeleteMessage = async () => {
+    if (!selectedMessageId) return;
+
+    try {
+      const { error } = await supabase
+        .from("messages")
+        .update({ is_deleted: true })
+        .eq("id", selectedMessageId);
+
+      if (error) throw error;
+
+      setMessages((prev) => prev.filter((msg) => msg.id !== selectedMessageId));
+      
+      toast({
+        title: "تم حذف الرسالة",
+        description: "تم حذف الرسالة بنجاح",
+      });
+    } catch (error: any) {
+      console.error("Delete message error:", error);
+      toast({
+        title: "فشل حذف الرسالة",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteDialogOpen(false);
+      setSelectedMessageId(null);
+    }
+  };
+
   const formatTime = (timestamp: string | null) => {
     if (!timestamp) return "";
     const date = new Date(timestamp);
@@ -210,23 +266,38 @@ export default function Chat() {
             return (
               <div
                 key={message.id}
-                className={`flex ${isOwn ? "justify-end" : "justify-start"}`}
+                className={`flex ${isOwn ? "justify-end" : "justify-start"} group`}
               >
-                <div
-                  className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-                    isOwn
-                      ? "bg-gradient-primary text-white shadow-glow"
-                      : "bg-card border border-border/30"
-                  }`}
-                >
-                  <p className="text-sm break-words">{message.content}</p>
-                  <p
-                    className={`text-xs mt-1 ${
-                      isOwn ? "text-white/70" : "text-muted-foreground"
+                <div className="relative">
+                  <div
+                    className={`max-w-[70%] rounded-2xl px-4 py-2 ${
+                      isOwn
+                        ? "bg-gradient-primary text-white shadow-glow"
+                        : "bg-card border border-border/30"
                     }`}
                   >
-                    {formatTime(message.created_at)}
-                  </p>
+                    <p className="text-sm break-words">{message.content}</p>
+                    <p
+                      className={`text-xs mt-1 ${
+                        isOwn ? "text-white/70" : "text-muted-foreground"
+                      }`}
+                    >
+                      {formatTime(message.created_at)}
+                    </p>
+                  </div>
+                  {isOwn && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute -left-10 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive h-8 w-8"
+                      onClick={() => {
+                        setSelectedMessageId(message.id);
+                        setDeleteDialogOpen(true);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
                 </div>
               </div>
             );
@@ -262,6 +333,27 @@ export default function Chat() {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>هل أنت متأكد؟</AlertDialogTitle>
+            <AlertDialogDescription>
+              سيتم حذف الرسالة بشكل نهائي ولا يمكن التراجع عن هذا الإجراء.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteMessage}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              حذف
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
