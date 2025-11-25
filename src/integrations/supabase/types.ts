@@ -260,11 +260,52 @@ export type Database = {
         }
         Relationships: []
       }
+      message_reactions: {
+        Row: {
+          created_at: string | null
+          id: string
+          message_id: string
+          reaction: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          message_id: string
+          reaction: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          message_id?: string
+          reaction?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_reactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           content: string
           conversation_id: string
           created_at: string | null
+          deleted_for_all: boolean | null
+          deleted_for_sender: boolean | null
           id: string
           is_deleted: boolean | null
           media_url: string | null
@@ -275,6 +316,8 @@ export type Database = {
           content: string
           conversation_id: string
           created_at?: string | null
+          deleted_for_all?: boolean | null
+          deleted_for_sender?: boolean | null
           id?: string
           is_deleted?: boolean | null
           media_url?: string | null
@@ -285,6 +328,8 @@ export type Database = {
           content?: string
           conversation_id?: string
           created_at?: string | null
+          deleted_for_all?: boolean | null
+          deleted_for_sender?: boolean | null
           id?: string
           is_deleted?: boolean | null
           media_url?: string | null
@@ -365,6 +410,7 @@ export type Database = {
           display_name: string | null
           id: string
           is_banned: boolean | null
+          is_online: boolean | null
           last_seen: string | null
           password_hash: string
           status: string | null
@@ -379,6 +425,7 @@ export type Database = {
           display_name?: string | null
           id?: string
           is_banned?: boolean | null
+          is_online?: boolean | null
           last_seen?: string | null
           password_hash: string
           status?: string | null
@@ -393,6 +440,7 @@ export type Database = {
           display_name?: string | null
           id?: string
           is_banned?: boolean | null
+          is_online?: boolean | null
           last_seen?: string | null
           password_hash?: string
           status?: string | null
@@ -497,6 +545,42 @@ export type Database = {
           },
         ]
       }
+      story_views: {
+        Row: {
+          id: string
+          story_id: string
+          viewed_at: string | null
+          viewer_id: string
+        }
+        Insert: {
+          id?: string
+          story_id: string
+          viewed_at?: string | null
+          viewer_id: string
+        }
+        Update: {
+          id?: string
+          story_id?: string
+          viewed_at?: string | null
+          viewer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "story_views_story_id_fkey"
+            columns: ["story_id"]
+            isOneToOne: false
+            referencedRelation: "stories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "story_views_viewer_id_fkey"
+            columns: ["viewer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -544,12 +628,14 @@ export type Database = {
           conversation_id: string
           other_avatar_url: string
           other_display_name: string
+          other_is_online: boolean
           other_last_seen: string
           other_status: string
           other_user_id: string
           other_username: string
         }[]
       }
+      get_story_views_count: { Args: { p_story_id: string }; Returns: number }
       get_user_conversations_with_details: {
         Args: { p_user_id: string }
         Returns: {
