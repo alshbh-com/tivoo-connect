@@ -1,20 +1,37 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, User, MessageCircle } from "lucide-react";
-import { useEffect } from "react";
+import { ArrowLeft, User, MessageCircle, Shield } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export default function Profile() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     if (!user) {
       navigate("/auth");
+      return;
     }
+    checkAdmin();
   }, [user, navigate]);
+
+  const checkAdmin = async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase.rpc("has_role", {
+        _user_id: user.id,
+        _role: "admin",
+      });
+      setIsAdmin(data || false);
+    } catch (error) {
+      console.error("Check admin error:", error);
+    }
+  };
 
   if (!user) return null;
 
@@ -86,6 +103,25 @@ export default function Profile() {
             >
               عرض البروفايل
             </Button>
+
+            <Button
+              onClick={() => navigate("/posts")}
+              variant="outline"
+              className="w-full border-border/50 hover:border-primary/50 transition-colors"
+            >
+              البوستات
+            </Button>
+
+            {isAdmin && (
+              <Button
+                onClick={() => navigate("/admin")}
+                variant="outline"
+                className="w-full border-border/50 hover:border-primary/50 transition-colors"
+              >
+                <Shield className="w-4 h-4 mr-2" />
+                لوحة الأدمن
+              </Button>
+            )}
             
             <a
               href={`https://wa.me/201204486263?text=${encodeURIComponent(
