@@ -11,6 +11,7 @@ import UserProfile from "./pages/UserProfile";
 import UserSearch from "./pages/UserSearch";
 import Chat from "./pages/Chat";
 import Stories from "./pages/Stories";
+import Posts from "./pages/Posts";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
@@ -31,6 +32,7 @@ const App = () => (
             <Route path="/search" element={<UserSearch />} />
             <Route path="/chat/:id" element={<Chat />} />
             <Route path="/stories" element={<Stories />} />
+            <Route path="/posts" element={<Posts />} />
             <Route path="/admin" element={<Admin />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
