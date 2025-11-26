@@ -272,22 +272,27 @@ export default function Chat() {
           </Button>
           {conversationDetails && (
             <>
-              <Avatar className="w-10 h-10 border-2 border-primary/20">
-                <AvatarImage
-                  src={conversationDetails.other_avatar_url || undefined}
-                />
-                <AvatarFallback className="bg-gradient-secondary text-white">
-                  {conversationDetails.other_username[0].toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1">
-                <h1 className="font-semibold">
-                  {conversationDetails.other_display_name ||
-                    conversationDetails.other_username}
-                </h1>
-                <p className="text-xs text-muted-foreground">
-                  {getOnlineStatus()}
-                </p>
+              <div 
+                className="flex items-center gap-3 flex-1 cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => navigate(`/profile/${conversationDetails.other_user_id}`)}
+              >
+                <Avatar className="w-10 h-10 border-2 border-primary/20">
+                  <AvatarImage
+                    src={conversationDetails.other_avatar_url || undefined}
+                  />
+                  <AvatarFallback className="bg-gradient-secondary text-white">
+                    {conversationDetails.other_username[0].toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1">
+                  <h1 className="font-semibold">
+                    {conversationDetails.other_display_name ||
+                      conversationDetails.other_username}
+                  </h1>
+                  <p className="text-xs text-muted-foreground">
+                    {getOnlineStatus()}
+                  </p>
+                </div>
               </div>
             </>
           )}
