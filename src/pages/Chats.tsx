@@ -53,6 +53,7 @@ export default function Chats() {
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -62,7 +63,18 @@ export default function Chats() {
 
     loadConversations();
     subscribeToMessages();
+    checkAdmin();
   }, [user, navigate]);
+
+  const checkAdmin = async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase.rpc("has_role", { _user_id: user.id, _role: "admin" });
+      setIsAdmin(data || false);
+    } catch (error) {
+      console.error("Check admin error:", error);
+    }
+  };
 
   const loadConversations = async () => {
     if (!user) return;
