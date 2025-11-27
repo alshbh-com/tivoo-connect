@@ -13,6 +13,7 @@ import Chat from "./pages/Chat";
 import Stories from "./pages/Stories";
 import Posts from "./pages/Posts";
 import Admin from "./pages/Admin";
+import Banned from "./pages/Banned";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ const App = () => (
             <Route path="/stories" element={<Stories />} />
             <Route path="/posts" element={<Posts />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/banned" element={<Banned />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -4,13 +4,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, User, MessageCircle, Shield } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, User, MessageCircle, Shield, Upload, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Profile() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -30,6 +34,51 @@ export default function Profile() {
       setIsAdmin(data || false);
     } catch (error) {
       console.error("Check admin error:", error);
+    }
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setUploading(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(filePath);
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ avatar_url: urlData.publicUrl })
+        .eq("id", user.id);
+
+      if (updateError) throw updateError;
+
+      toast({
+        title: "تم تحديث الصورة",
+        description: "تم تحديث صورة البروفايل بنجاح",
+      });
+
+      window.location.reload();
+    } catch (error: any) {
+      console.error("Upload error:", error);
+      toast({
+        title: "خطأ",
+        description: error.message || "حدث خطأ أثناء رفع الصورة",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -54,12 +103,32 @@ export default function Profile() {
       <main className="max-w-4xl mx-auto px-4 py-6">
         <Card className="p-8 bg-card/80 backdrop-blur-xl border-border/50 shadow-elevated">
           <div className="text-center mb-8">
-            <Avatar className="w-32 h-32 mx-auto mb-4 border-4 border-primary/20">
-              <AvatarImage src={user.avatar_url || undefined} />
-              <AvatarFallback className="bg-gradient-primary text-white text-3xl">
-                {user.display_name?.[0] || user.username[0].toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+            <div className="relative inline-block">
+              <Avatar className="w-32 h-32 mx-auto mb-4 border-4 border-primary/20">
+                <AvatarImage src={user.avatar_url || undefined} />
+                <AvatarFallback className="bg-gradient-primary text-white text-3xl">
+                  {user.display_name?.[0] || user.username[0].toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <label
+                htmlFor="avatar-upload"
+                className="absolute bottom-3 right-1/2 translate-x-1/2 bg-primary hover:bg-primary/90 text-primary-foreground p-2 rounded-full cursor-pointer shadow-lg transition-colors"
+              >
+                {uploading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4" />
+                )}
+              </label>
+              <Input
+                id="avatar-upload"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarUpload}
+                disabled={uploading}
+              />
+            </div>
             
             <h1 className="text-2xl font-bold mb-1">
               {user.display_name || user.username}

@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, MessageCircle, UserPlus, Heart, Loader2 } from "lucide-react";
+import { ArrowLeft, MessageCircle, UserPlus, Heart, Loader2, AlertTriangle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -27,6 +29,10 @@ export default function UserProfile() {
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const [friendship, setFriendship] = useState<any>(null);
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportDetails, setReportDetails] = useState("");
+  const [submittingReport, setSubmittingReport] = useState(false);
 
   const isOwnProfile = user?.id === profileId;
 
@@ -130,6 +136,56 @@ export default function UserProfile() {
     }
   };
 
+  const handleSubmitReport = async () => {
+    if (!reportReason.trim()) {
+      toast({
+        title: "خطأ",
+        description: "يجب إدخال سبب الإبلاغ",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSubmittingReport(true);
+    try {
+      const { error } = await supabase.from("user_reports").insert({
+        reporter_id: user!.id,
+        reported_user_id: profileId!,
+        reason: reportReason.trim(),
+        details: reportDetails.trim() || null,
+      });
+
+      if (error) {
+        if (error.code === "23505") {
+          toast({
+            title: "خطأ",
+            description: "لقد أبلغت عن هذا المستخدم من قبل",
+            variant: "destructive",
+          });
+        } else {
+          throw error;
+        }
+      } else {
+        toast({
+          title: "تم الإبلاغ",
+          description: "تم إرسال البلاغ بنجاح",
+        });
+        setReportDialogOpen(false);
+        setReportReason("");
+        setReportDetails("");
+      }
+    } catch (error: any) {
+      console.error("Report error:", error);
+      toast({
+        title: "خطأ",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   }
@@ -158,9 +214,19 @@ export default function UserProfile() {
             </div>
           </div>
           {!isOwnProfile && (
-            <div className="flex gap-3 mt-4">
-              <Button onClick={handleStartChat} className="flex-1 bg-gradient-primary hover:opacity-90"><MessageCircle className="w-4 h-4 mr-2" />محادثة</Button>
-              {!friendship && <Button onClick={async () => { await supabase.from("friendships").insert({ user_id: user!.id, friend_id: profileId!, status: "pending" }); loadFriendship(); }} variant="outline" className="flex-1"><UserPlus className="w-4 h-4 mr-2" />إضافة صديق</Button>}
+            <div className="space-y-2 mt-4">
+              <div className="flex gap-3">
+                <Button onClick={handleStartChat} className="flex-1 bg-gradient-primary hover:opacity-90"><MessageCircle className="w-4 h-4 mr-2" />محادثة</Button>
+                {!friendship && <Button onClick={async () => { await supabase.from("friendships").insert({ user_id: user!.id, friend_id: profileId!, status: "pending" }); loadFriendship(); }} variant="outline" className="flex-1"><UserPlus className="w-4 h-4 mr-2" />إضافة صديق</Button>}
+              </div>
+              <Button
+                variant="outline"
+                className="w-full border-destructive/50 text-destructive hover:bg-destructive/10"
+                onClick={() => setReportDialogOpen(true)}
+              >
+                <AlertTriangle className="w-4 h-4 mr-2" />
+                إبلاغ عن المستخدم
+              </Button>
             </div>
           )}
         </Card>
@@ -191,6 +257,63 @@ export default function UserProfile() {
           ))}
         </div>
       </main>
+
+      {/* Report Dialog */}
+      <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>إبلاغ عن المستخدم</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="reason">سبب الإبلاغ *</Label>
+              <Textarea
+                id="reason"
+                placeholder="مثال: محتوى غير لائق، سلوك مسيء، انتحال شخصية..."
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="details">تفاصيل إضافية (اختياري)</Label>
+              <Textarea
+                id="details"
+                placeholder="أي معلومات إضافية تساعد في فهم البلاغ..."
+                value={reportDetails}
+                onChange={(e) => setReportDetails(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReportDialogOpen(false);
+                setReportReason("");
+                setReportDetails("");
+              }}
+            >
+              إلغاء
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleSubmitReport}
+              disabled={submittingReport || !reportReason.trim()}
+            >
+              {submittingReport ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  جاري الإرسال...
+                </>
+              ) : (
+                "إرسال البلاغ"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

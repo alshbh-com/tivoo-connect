@@ -110,6 +110,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
 
       if (data.success && data.user) {
+        if (data.user.is_banned) {
+          setUser(data.user);
+          localStorage.setItem('user', JSON.stringify(data.user));
+          return { success: true };
+        }
         setUser(data.user);
         localStorage.setItem('user', JSON.stringify(data.user));
         return { success: true };
