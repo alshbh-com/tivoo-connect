@@ -13,6 +13,9 @@ serve(async (req) => {
 
   try {
     const { username, password } = await req.json();
+    
+    // Create email from username for Supabase Auth
+    const email = `${username.toLowerCase()}@tivoo.internal`;
 
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -100,6 +103,34 @@ serve(async (req) => {
       );
     }
 
+    // Check if Supabase Auth user exists, create if not
+    let authData;
+    try {
+      authData = await supabaseClient.auth.signInWithPassword({
+        email,
+        password,
+      });
+    } catch (signInError) {
+      // User doesn't exist in auth, create it
+      const { data: newAuthUser, error: createError } = await supabaseClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { username: username.toLowerCase() },
+      });
+      
+      if (createError) {
+        console.error("Error creating auth user:", createError);
+        // Continue without auth for backward compatibility
+      } else {
+        // Try signing in again
+        authData = await supabaseClient.auth.signInWithPassword({
+          email,
+          password,
+        });
+      }
+    }
+
     // Update last seen
     await supabaseClient
       .from("profiles")
@@ -116,6 +147,7 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         user: user,
+        session: authData?.data?.session || null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
