@@ -110,6 +110,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
 
       if (data.success && data.user) {
+        // Set session from edge function
+        if (data.session) {
+          await supabase.auth.setSession(data.session);
+        }
+        
         if (data.user.is_banned) {
           setUser(data.user);
           localStorage.setItem('user', JSON.stringify(data.user));
@@ -135,6 +140,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
 
       if (data.success && data.user) {
+        // Set session from edge function
+        if (data.session) {
+          await supabase.auth.setSession(data.session);
+        }
+        
         setUser(data.user);
         localStorage.setItem('user', JSON.stringify(data.user));
         return { success: true };
@@ -146,13 +156,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
     if (user) {
-      void supabase
+      await supabase
         .from('profiles')
         .update({ is_online: false, last_seen: new Date().toISOString() })
         .eq('id', user.id);
     }
+    await supabase.auth.signOut();
     setUser(null);
     localStorage.removeItem('user');
   };

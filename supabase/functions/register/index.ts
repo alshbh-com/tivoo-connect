@@ -13,6 +13,9 @@ serve(async (req) => {
 
   try {
     const { username, password, displayName } = await req.json();
+    
+    // Create email from username for Supabase Auth
+    const email = `${username.toLowerCase()}@tivoo.internal`;
 
     // Validate username format
     const usernameRegex = /^[a-zA-Z0-9]+$/;
@@ -78,10 +81,29 @@ serve(async (req) => {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const passwordHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-    // Create profile
+    // Create Supabase Auth user first
+    const { data: authData, error: authError } = await supabaseClient.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+
+    if (authError) {
+      console.error("Auth creation error:", authError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "حدث خطأ في إنشاء الحساب",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Create profile with auth user id
     const { data: newUser, error: insertError } = await supabaseClient
       .from("profiles")
       .insert({
+        id: authData.user.id,
         username: username.toLowerCase(),
         password_hash: passwordHash,
         display_name: displayName || username,
@@ -90,6 +112,8 @@ serve(async (req) => {
       .single();
 
     if (insertError) {
+      // If profile creation fails, delete auth user
+      await supabaseClient.auth.admin.deleteUser(authData.user.id);
       throw insertError;
     }
 
@@ -99,10 +123,21 @@ serve(async (req) => {
       role: "user",
     });
 
+    // Sign in to create session
+    const { data: sessionData, error: signInError } = await supabaseClient.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (signInError) {
+      console.error("Sign in error:", signInError);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         user: newUser,
+        session: sessionData?.session || null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
