@@ -375,19 +375,22 @@ export default function Admin() {
 
               <div className="space-y-2">
                 {searchResults.map((profile) => (
-                  <Card key={profile.id} className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-semibold">
-                          {profile.display_name || profile.username}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          @{profile.username}
-                        </p>
-                        {profile.is_banned && (
-                          <p className="text-xs text-red-500 mt-1">محظور</p>
-                        )}
-                      </div>
+                <Card key={profile.id} className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="font-semibold">
+                        {profile.display_name || profile.username}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        اسم المستخدم: @{profile.username}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        ID: {profile.id}
+                      </p>
+                      {profile.is_banned && (
+                        <p className="text-xs text-red-500 mt-1">محظور</p>
+                      )}
+                    </div>
                       <div className="flex gap-2">
                         <Button
                           variant="outline"
