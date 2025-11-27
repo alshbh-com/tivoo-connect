@@ -61,6 +61,11 @@ export default function Chats() {
       return;
     }
 
+    if (user.is_banned) {
+      navigate("/banned");
+      return;
+    }
+
     loadConversations();
     subscribeToMessages();
     checkAdmin();

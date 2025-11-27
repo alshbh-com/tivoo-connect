@@ -40,6 +40,9 @@ export default function Admin() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [reports, setReports] = useState<any[]>([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+  const [lockdownMode, setLockdownMode] = useState(false);
 
   useEffect(() => {
     checkAdminAccess();
@@ -71,6 +74,8 @@ export default function Admin() {
 
       setIsAdmin(true);
       loadStats();
+      loadReports();
+      loadSettings();
     } catch (error: any) {
       console.error("Check admin error:", error);
       navigate("/");
@@ -154,6 +159,101 @@ export default function Admin() {
       loadStats();
     } catch (error: any) {
       console.error("Ban user error:", error);
+      toast({
+        title: "خطأ",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const loadReports = async () => {
+    setLoadingReports(true);
+    try {
+      const { data, error } = await supabase
+        .from("user_reports")
+        .select(`
+          *,
+          reporter:reporter_id(username, display_name),
+          reported:reported_user_id(username, display_name, is_banned)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setReports(data || []);
+    } catch (error: any) {
+      console.error("Load reports error:", error);
+    } finally {
+      setLoadingReports(false);
+    }
+  };
+
+  const loadSettings = async () => {
+    try {
+      const { data } = await supabase
+        .from("admin_settings")
+        .select("*")
+        .eq("setting_key", "lockdown_mode")
+        .maybeSingle();
+
+      setLockdownMode(data?.setting_value === "true");
+    } catch (error: any) {
+      console.error("Load settings error:", error);
+    }
+  };
+
+  const handleReviewReport = async (reportId: string, status: string, adminNotes?: string) => {
+    try {
+      const { error } = await supabase
+        .from("user_reports")
+        .update({
+          status,
+          reviewed_by: user?.id,
+          reviewed_at: new Date().toISOString(),
+          admin_notes: adminNotes || null,
+        })
+        .eq("id", reportId);
+
+      if (error) throw error;
+
+      toast({
+        title: "تم تحديث البلاغ",
+        description: "تم تحديث حالة البلاغ بنجاح",
+      });
+
+      loadReports();
+    } catch (error: any) {
+      console.error("Review report error:", error);
+      toast({
+        title: "خطأ",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleToggleLockdown = async () => {
+    try {
+      const newValue = !lockdownMode;
+      const { error } = await supabase
+        .from("admin_settings")
+        .upsert({
+          setting_key: "lockdown_mode",
+          setting_value: String(newValue),
+          updated_by: user?.id,
+        });
+
+      if (error) throw error;
+
+      setLockdownMode(newValue);
+      toast({
+        title: newValue ? "تم تفعيل وضع الطوارئ" : "تم إلغاء وضع الطوارئ",
+        description: newValue
+          ? "تم إيقاف الرسائل الجديدة مؤقتاً"
+          : "تم السماح بإرسال الرسائل",
+      });
+    } catch (error: any) {
+      console.error("Toggle lockdown error:", error);
       toast({
         title: "خطأ",
         description: error.message,
@@ -324,15 +424,112 @@ export default function Admin() {
           </TabsContent>
 
           <TabsContent value="reports">
-            <Card className="p-6">
-              <p className="text-muted-foreground">جاري العمل على هذه الميزة...</p>
-            </Card>
+            <div className="space-y-4">
+              {loadingReports ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : reports.length === 0 ? (
+                <Card className="p-6 text-center">
+                  <p className="text-muted-foreground">لا توجد بلاغات</p>
+                </Card>
+              ) : (
+                reports.map((report) => (
+                  <Card key={report.id} className="p-4">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-semibold">
+                            {report.reporter?.display_name || report.reporter?.username}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            أبلغ عن @{report.reported?.username}
+                          </p>
+                        </div>
+                        <span
+                          className={`text-xs px-2 py-1 rounded ${
+                            report.status === "pending"
+                              ? "bg-orange-500/10 text-orange-500"
+                              : report.status === "resolved"
+                              ? "bg-success/10 text-success"
+                              : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {report.status === "pending"
+                            ? "معلق"
+                            : report.status === "resolved"
+                            ? "تم الحل"
+                            : "مرفوض"}
+                        </span>
+                      </div>
+                      <div className="bg-muted/30 rounded p-3">
+                        <p className="text-sm font-medium mb-1">السبب:</p>
+                        <p className="text-sm">{report.reason}</p>
+                        {report.details && (
+                          <>
+                            <p className="text-sm font-medium mt-2 mb-1">التفاصيل:</p>
+                            <p className="text-sm">{report.details}</p>
+                          </>
+                        )}
+                      </div>
+                      {report.status === "pending" && (
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => navigate(`/profile/${report.reported_user_id}`)}
+                          >
+                            عرض البروفايل
+                          </Button>
+                          {!report.reported?.is_banned && (
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={async () => {
+                                await handleBanUser(report.reported_user_id, true);
+                                await handleReviewReport(report.id, "resolved", "تم حظر المستخدم");
+                              }}
+                            >
+                              حظر المستخدم
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            onClick={() => handleReviewReport(report.id, "dismissed")}
+                          >
+                            رفض البلاغ
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="settings">
-            <Card className="p-6">
-              <p className="text-muted-foreground">جاري العمل على هذه الميزة...</p>
-            </Card>
+            <div className="space-y-4">
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold mb-4">إعدادات عامة</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">وضع الطوارئ</p>
+                      <p className="text-sm text-muted-foreground">
+                        إيقاف إرسال الرسائل الجديدة مؤقتاً
+                      </p>
+                    </div>
+                    <Button
+                      variant={lockdownMode ? "destructive" : "outline"}
+                      onClick={handleToggleLockdown}
+                    >
+                      {lockdownMode ? "إلغاء الطوارئ" : "تفعيل الطوارئ"}
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </main>
