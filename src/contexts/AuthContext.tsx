@@ -37,37 +37,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      void (async () => {
-        try {
-          const { data } = await supabase
+    const initAuth = async () => {
+      try {
+        // Check Supabase Auth session first
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          // Get profile from database
+          const { data: profile } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', parsedUser.id)
+            .eq('id', session.user.id)
             .single();
           
-          if (data && !data.is_banned) {
-            setUser(data);
-            void supabase
+          if (profile && !profile.is_banned) {
+            setUser(profile);
+            localStorage.setItem('user', JSON.stringify(profile));
+            
+            // Update online status
+            await supabase
               .from('profiles')
               .update({ 
                 is_online: true,
                 last_seen: new Date().toISOString()
               })
-              .eq('id', data.id);
-          } else {
+              .eq('id', profile.id);
+          } else if (profile?.is_banned) {
+            // User is banned, sign them out
+            await supabase.auth.signOut();
             localStorage.removeItem('user');
           }
-        } catch {
+        } else {
+          // No session, clear local storage
           localStorage.removeItem('user');
         }
+      } catch (error) {
+        console.error('Init auth error:', error);
+        localStorage.removeItem('user');
+      } finally {
         setLoading(false);
-      })();
-    } else {
-      setLoading(false);
-    }
+      }
+    };
+
+    initAuth();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (profile && !profile.is_banned) {
+          setUser(profile);
+          localStorage.setItem('user', JSON.stringify(profile));
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        localStorage.removeItem('user');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
