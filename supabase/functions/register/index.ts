@@ -124,21 +124,43 @@ serve(async (req) => {
       role: "user",
     });
 
-    // Sign in to create session
-    const { data: sessionData, error: signInError } = await supabaseClient.auth.signInWithPassword({
-      email,
-      password,
+    // Generate session using admin API
+    const { data: linkData, error: linkError } = await supabaseClient.auth.admin.generateLink({
+      type: 'magiclink',
+      email: email,
+      options: {
+        redirectTo: Deno.env.get("SUPABASE_URL") || "",
+      }
     });
 
-    if (signInError) {
-      console.error("Sign in error:", signInError);
+    if (linkError) {
+      console.error("Generate link error:", linkError);
+    }
+
+    // Extract and verify magic link token
+    let session = null;
+    if (linkData?.properties?.action_link) {
+      const url = new URL(linkData.properties.action_link);
+      const token = url.searchParams.get('token');
+      const type = url.searchParams.get('type');
+      
+      if (token && type === 'magiclink') {
+        const { data: verifyData, error: verifyError } = await supabaseClient.auth.verifyOtp({
+          token_hash: token,
+          type: 'magiclink',
+        });
+        
+        if (!verifyError && verifyData?.session) {
+          session = verifyData.session;
+        }
+      }
     }
 
     return new Response(
       JSON.stringify({
         success: true,
         user: newUser,
-        session: sessionData?.session || null,
+        session: session,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
