@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { create } from "https://deno.land/x/djwt@v2.8/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,9 +14,6 @@ serve(async (req) => {
   try {
     const { username, password } = await req.json();
     
-    // Create email from username for Supabase Auth
-    const email = `${username.toLowerCase()}@tivoo.internal`;
-
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
@@ -104,40 +100,44 @@ serve(async (req) => {
       );
     }
 
-    // Update or create Supabase Auth user
+    // Create email for auth
+    const email = `${username.toLowerCase()}@tivoo.internal`;
+
+    // Check if auth user exists
     const { data: existingUsers } = await supabaseClient.auth.admin.listUsers();
-    const existingAuthUser = existingUsers?.users?.find(u => u.email === email);
+    const existingAuthUser = existingUsers?.users?.find(u => u.id === user.id);
     
-    if (existingAuthUser) {
-      // Update existing auth user's password
-      await supabaseClient.auth.admin.updateUserById(existingAuthUser.id, {
-        password: password,
-        email_confirm: true,
-      });
-    } else {
-      // Create new auth user
+    if (!existingAuthUser) {
+      // Create auth user with correct ID
       await supabaseClient.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
         user_metadata: { username: username.toLowerCase() },
+        id: user.id, // Use existing profile ID
       });
     }
 
-    // Sign in to get a real session
-    const { data: authData, error: signInError } = await supabaseClient.auth.signInWithPassword({
-      email,
-      password,
+    // Generate session using admin API
+    const { data: linkData, error: linkError } = await supabaseClient.auth.admin.generateLink({
+      type: 'magiclink',
+      email: email,
+      options: {
+        redirectTo: Deno.env.get("SUPABASE_URL") || "",
+      }
     });
 
-    if (signInError) {
-      console.error("Sign in error:", signInError);
+    if (linkError) {
+      console.error("Generate link error:", linkError);
     }
 
     // Update last seen
     await supabaseClient
       .from("profiles")
-      .update({ last_seen: new Date().toISOString() })
+      .update({ 
+        last_seen: new Date().toISOString(),
+        is_online: true 
+      })
       .eq("id", user.id);
 
     // Clear old login attempts
@@ -146,11 +146,31 @@ serve(async (req) => {
       .delete()
       .eq("username", username.toLowerCase());
 
+    // Extract access token from magic link
+    let session = null;
+    if (linkData?.properties?.action_link) {
+      const url = new URL(linkData.properties.action_link);
+      const token = url.searchParams.get('token');
+      const type = url.searchParams.get('type');
+      
+      if (token && type === 'magiclink') {
+        // Verify the magic link token to get a session
+        const { data: verifyData, error: verifyError } = await supabaseClient.auth.verifyOtp({
+          token_hash: token,
+          type: 'magiclink',
+        });
+        
+        if (!verifyError && verifyData?.session) {
+          session = verifyData.session;
+        }
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         user: user,
-        session: authData?.session || null,
+        session: session,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
