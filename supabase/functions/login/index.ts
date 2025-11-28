@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { create } from "https://deno.land/x/djwt@v2.8/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,7 +23,7 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    // Get user IP (simplified - in production use proper IP detection)
+    // Get user IP
     const ipAddress = req.headers.get("x-forwarded-for") || "unknown";
 
     // Check failed login attempts in last 24 hours
@@ -103,32 +104,34 @@ serve(async (req) => {
       );
     }
 
-    // Check if Supabase Auth user exists, create if not
-    let authData;
-    try {
-      authData = await supabaseClient.auth.signInWithPassword({
-        email,
-        password,
+    // Update or create Supabase Auth user
+    const { data: existingUsers } = await supabaseClient.auth.admin.listUsers();
+    const existingAuthUser = existingUsers?.users?.find(u => u.email === email);
+    
+    if (existingAuthUser) {
+      // Update existing auth user's password
+      await supabaseClient.auth.admin.updateUserById(existingAuthUser.id, {
+        password: password,
+        email_confirm: true,
       });
-    } catch (signInError) {
-      // User doesn't exist in auth, create it
-      const { data: newAuthUser, error: createError } = await supabaseClient.auth.admin.createUser({
+    } else {
+      // Create new auth user
+      await supabaseClient.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
         user_metadata: { username: username.toLowerCase() },
       });
-      
-      if (createError) {
-        console.error("Error creating auth user:", createError);
-        // Continue without auth for backward compatibility
-      } else {
-        // Try signing in again
-        authData = await supabaseClient.auth.signInWithPassword({
-          email,
-          password,
-        });
-      }
+    }
+
+    // Sign in to get a real session
+    const { data: authData, error: signInError } = await supabaseClient.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (signInError) {
+      console.error("Sign in error:", signInError);
     }
 
     // Update last seen
@@ -147,7 +150,7 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         user: user,
-        session: authData?.data?.session || null,
+        session: authData?.session || null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

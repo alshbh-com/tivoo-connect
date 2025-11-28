@@ -86,6 +86,7 @@ serve(async (req) => {
       email,
       password,
       email_confirm: true,
+      user_metadata: { username: username.toLowerCase() },
     });
 
     if (authError) {
